@@ -177,6 +177,7 @@ def cli(cli_context, config, provider):
 @cli.command()
 @click.argument('cluster-name')
 @click.option('--num-slaves', type=int, required=True)
+@click.option('--slave-only/--no-slave-only', default=False)
 @click.option('--install-hdfs/--no-install-hdfs', default=False)
 @click.option('--hdfs-version')
 @click.option('--hdfs-download-source',
@@ -220,6 +221,7 @@ def launch(
         cli_context,
         cluster_name,
         num_slaves,
+        slave_only,
         install_hdfs,
         hdfs_version,
         hdfs_download_source,
@@ -306,6 +308,7 @@ def launch(
         return ec2.launch(
             cluster_name=cluster_name,
             num_slaves=num_slaves,
+            slave_only=slave_only,
             services=services,
             assume_yes=assume_yes,
             key_name=ec2_key_name,

@@ -21,6 +21,8 @@ from .exceptions import (
     ClusterInvalidState,
     NothingToDo)
 from .ssh import generate_ssh_key_pair
+from .ssh import ssh_check_output
+from .ssh import get_ssh_client
 
 
 class NoDefaultVPC(Error):
@@ -468,6 +470,7 @@ def launch(
         *,
         cluster_name,
         num_slaves,
+        slave_only,
         services,
         assume_yes,
         key_name,
@@ -498,19 +501,19 @@ def launch(
             vpc_id=vpc_id,
             subnet_id=subnet_id)
 
-    try:
-        get_cluster(
-            cluster_name=cluster_name,
-            region=region,
-            vpc_id=vpc_id)
-    except ClusterNotFound as e:
-        pass
-    else:
-        raise ClusterAlreadyExists(
-            "Cluster {c} already exists in region {r}, VPC {v}.".format(
-                c=cluster_name,
-                r=region,
-                v=vpc_id))
+    #try:
+    #    get_cluster(
+    #        cluster_name=cluster_name,
+    #        region=region,
+    #        vpc_id=vpc_id)
+    #except ClusterNotFound as e:
+    #    pass
+    #else:
+        #raise ClusterAlreadyExists(
+        #    "Cluster {c} already exists in region {r}, VPC {v}.".format(
+        #        c=cluster_name,
+        #        r=region,
+        #        v=vpc_id))
 
     try:
         security_groups = get_or_create_ec2_security_groups(
@@ -531,7 +534,10 @@ def launch(
 
     ec2 = boto3.resource(service_name='ec2', region_name=region)
 
-    num_instances = num_slaves + 1
+    if slave_only:
+        num_instances = num_slaves
+    else:
+        num_instances = num_slaves + 1
     spot_requests = []
     cluster_instances = []
 
@@ -609,15 +615,20 @@ def launch(
 
         time.sleep(10)  # AWS metadata eventual consistency tax.
 
-        master_instance = cluster_instances[0]
-        slave_instances = cluster_instances[1:]
+        if slave_only:
+            master_instance = None
+            slave_instances = cluster_instances
+        else:
+            master_instance = cluster_instances[0]
+            slave_instances = cluster_instances[1:]
 
-        (ec2.instances
-            .filter(InstanceIds=[master_instance.id])
-            .create_tags(
-                Tags=[
-                    {'Key': 'flintrock-role', 'Value': 'master'},
-                    {'Key': 'Name', 'Value': '{c}-master'.format(c=cluster_name)}]))
+        if not slave_only:
+            (ec2.instances
+                .filter(InstanceIds=[master_instance.id])
+                .create_tags(
+                    Tags=[
+                        {'Key': 'flintrock-role', 'Value': 'master'},
+                        {'Key': 'Name', 'Value': '{c}-master'.format(c=cluster_name)}]))
         (ec2.instances
             .filter(InstanceIds=[i.id for i in slave_instances])
             .create_tags(
@@ -625,13 +636,43 @@ def launch(
                     {'Key': 'flintrock-role', 'Value': 'slave'},
                     {'Key': 'Name', 'Value': '{c}-slave'.format(c=cluster_name)}]))
 
-        cluster = EC2Cluster(
-            name=cluster_name,
-            region=region,
-            vpc_id=vpc_id,
-            ssh_key_pair=generate_ssh_key_pair(),
-            master_instance=master_instance,
-            slave_instances=slave_instances)
+        if slave_only:
+            temp_cluster = get_cluster(
+                cluster_name=cluster_name,
+                region=region,
+                vpc_id=vpc_id)
+            print(temp_cluster)
+            master_instance = temp_cluster.master_instance
+            print(master_instance)
+            slave_instances = cluster_instances
+            print(slave_instances)
+
+        if not slave_only:
+            cluster = EC2Cluster(
+                name=cluster_name,
+                region=region,
+                vpc_id=vpc_id,
+                ssh_key_pair=generate_ssh_key_pair(),
+                master_instance=master_instance,
+                slave_instances=slave_instances)
+        else:
+            master_ssh_client = get_ssh_client(
+                    user=user,
+                    host=master_instance.public_ip_address,
+                    identity_file=identity_file)
+            with master_ssh_client:
+                private_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/id_rsa")
+                public_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/authorized_keys | grep flintrock | tail -n 1")
+                print(public_key, public_key)
+
+            cluster = EC2Cluster(
+                name=cluster_name,
+                region=region,
+                vpc_id=vpc_id,
+                ssh_key_pair=namedtuple('KeyPair', ['public', 'private'])(public_key, private_key),
+                master_instance=master_instance,
+                slave_instances=slave_instances)
+
 
         cluster.wait_for_state('running')
 
@@ -639,9 +680,12 @@ def launch(
             cluster=cluster,
             services=services,
             user=user,
-            identity_file=identity_file)
+            identity_file=identity_file,
+            slave_only=slave_only)
 
     except (Exception, KeyboardInterrupt) as e:
+        import traceback
+        traceback.print_exc()
         # TODO: Cleanup cluster security group here.
         print("There was a problem with the launch. Cleaning up...", file=sys.stderr)
 
@@ -757,6 +801,7 @@ def _get_cluster_master_slaves(
     slave_instances = []
 
     for instance in instances:
+        print(instance.id)
         for tag in instance.tags:
             if tag['Key'] == 'flintrock-role':
                 if tag['Value'] == 'master':

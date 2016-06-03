@@ -335,7 +335,7 @@ class Spark(FlintrockService):
 
                 set -e
 
-                spark/sbin/start-slaves.sh
+                spark/sbin/start-slaves.sh 2>> /tmp/logs
             """.format(
                 m=shlex.quote(cluster.master_host)))
 
