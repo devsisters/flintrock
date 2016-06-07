@@ -641,11 +641,8 @@ def launch(
                 cluster_name=cluster_name,
                 region=region,
                 vpc_id=vpc_id)
-            print(temp_cluster)
             master_instance = temp_cluster.master_instance
-            print(master_instance)
             slave_instances = cluster_instances
-            print(slave_instances)
 
         if not slave_only:
             cluster = EC2Cluster(
@@ -663,7 +660,6 @@ def launch(
             with master_ssh_client:
                 private_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/id_rsa")
                 public_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/authorized_keys | grep flintrock | tail -n 1")
-                print(public_key, public_key)
 
             cluster = EC2Cluster(
                 name=cluster_name,
@@ -801,7 +797,6 @@ def _get_cluster_master_slaves(
     slave_instances = []
 
     for instance in instances:
-        print(instance.id)
         for tag in instance.tags:
             if tag['Key'] == 'flintrock-role':
                 if tag['Value'] == 'master':
