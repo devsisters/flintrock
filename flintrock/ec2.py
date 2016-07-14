@@ -88,6 +88,10 @@ class EC2Cluster(FlintrockCluster):
         return [i.public_dns_name for i in self.slave_instances]
 
     @property
+    def num_slaves(self):
+        return len(self.slave_instances)
+
+    @property
     def state(self):
         instance_states = set(
             instance.state['Name'] for instance in self.instances)
@@ -193,6 +197,34 @@ class EC2Cluster(FlintrockCluster):
             .filter(InstanceIds=[instance.id for instance in self.instances])
             .stop())
         self.wait_for_state('stopped')
+
+    @timeit
+    def remove_slaves(self, *, user: str, identity_file: str, num_slaves: int):
+        ec2 = boto3.resource(service_name='ec2', region_name=self.region)
+
+        # self.remove_slaves_check() (?)
+        removed_slave_instances, self.slave_instances = \
+            self.slave_instances[0:num_slaves], self.slave_instances[num_slaves:]
+
+        if self.state == 'running':
+            super().remove_slaves(user=user, identity_file=identity_file)
+
+        # TODO: Centralize logic to get Flintrock base security group.
+        flintrock_base_group = list(
+            ec2.security_groups.filter(
+                Filters=[
+                    {'Name': 'group-name', 'Values': ['flintrock']},
+                    {'Name': 'vpc-id', 'Values': [self.vpc_id]},
+                ]))[0]
+
+        # TODO: Is there a way to do this in one call for all instances?
+        for instance in removed_slave_instances:
+            instance.modify_attribute(
+                Groups=[flintrock_base_group.id])
+
+        (ec2.instances
+            .filter(InstanceIds=[instance.id for instance in removed_slave_instances])
+            .terminate())
 
     def run_command_check(self):
         if self.state != 'running':
@@ -809,9 +841,9 @@ def _get_cluster_master_slaves(
                     slave_instances.append(instance)
 
     if not master_instance:
-        raise Exception("No master found.")
-    elif not slave_instances:
-        raise Exception("No slaves found.")
+        print("Warning: No master found.", file=sys.stderr)
+    # elif not slave_instances:
+    #     print("Warning: No slaves found.", file=sys.stderr)
 
     return (master_instance, slave_instances)
 

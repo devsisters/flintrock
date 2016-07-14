@@ -176,8 +176,8 @@ def cli(cli_context, config, provider):
 
 @cli.command()
 @click.argument('cluster-name')
-@click.option('--num-slaves', type=int, required=True)
 @click.option('--slave-only/--no-slave-only', default=False)
+@click.option('--num-slaves', type=click.IntRange(min=1), required=True)
 @click.option('--install-hdfs/--no-install-hdfs', default=False)
 @click.option('--hdfs-version')
 @click.option('--hdfs-download-source',
@@ -575,6 +575,79 @@ def stop(cli_context, cluster_name, ec2_region, ec2_vpc_id, assume_yes):
     print("{c} is now stopped.".format(c=cluster_name))
 
 
+@cli.command(name='remove-slaves')
+@click.argument('cluster-name')
+@click.option('--num-slaves', type=click.IntRange(min=1), required=True)
+@click.option('--ec2-region', default='us-east-1', show_default=True)
+@click.option('--ec2-vpc-id', default='', help="Leave empty for default VPC.")
+@click.option('--ec2-user')
+@click.option('--ec2-identity-file',
+              type=click.Path(exists=True, dir_okay=False),
+              help="Path to SSH .pem file for accessing nodes.")
+@click.option('--assume-yes/--no-assume-yes', default=False)
+@click.pass_context
+def remove_slaves(
+        cli_context,
+        cluster_name,
+        num_slaves,
+        ec2_region,
+        ec2_vpc_id,
+        ec2_user,
+        ec2_identity_file,
+        assume_yes):
+    """
+    Remove slaves from an existing cluster.
+    """
+    provider = cli_context.obj['provider']
+
+    option_requires(
+        option='--provider',
+        conditional_value='ec2',
+        requires_all=[
+            '--ec2-region',
+            '--ec2-user',
+            '--ec2-identity-file'],
+        scope=locals())
+
+    if provider == 'ec2':
+        cluster = ec2.get_cluster(
+            cluster_name=cluster_name,
+            region=ec2_region,
+            vpc_id=ec2_vpc_id)
+        user = ec2_user
+        identity_file = ec2_identity_file
+    else:
+        raise UnsupportedProviderError(provider)
+
+    if num_slaves > cluster.num_slaves:
+        print(
+            "Warning: Cluster has {c} slaves. "
+            "You asked to remove {n} slaves."
+            .format(
+                c=cluster.num_slaves,
+                n=num_slaves))
+        num_slaves = cluster.num_slaves
+
+    if not assume_yes:
+        cluster.print()
+        click.confirm(
+            text=("Are you sure you want to remove {n} slave{s} from this cluster?"
+                  .format(
+                      n=num_slaves,
+                      s='' if num_slaves == 1 else 's')),
+            abort=True)
+
+    print("Removing {n} slave{s}..."
+          .format(
+              n=num_slaves,
+              s='' if num_slaves == 1 else 's'))
+    cluster.remove_slaves(
+        user=user,
+        identity_file=identity_file,
+        num_slaves=num_slaves)
+    # print("Cluster now has {n} slaves.".format(n=))
+
+
 @cli.command(name='run-command')
 @click.argument('cluster-name')
 @click.argument('command', nargs=-1)
@@ -785,6 +858,7 @@ def config_to_click(config: dict) -> dict:
         'login': ec2_configs,
         'start': ec2_configs,
         'stop': ec2_configs,
+        'remove-slaves': ec2_configs,
         'run-command': ec2_configs,
         'copy-file': ec2_configs,
     }
