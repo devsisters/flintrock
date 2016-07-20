@@ -327,6 +327,159 @@ def launch(
         raise UnsupportedProviderError(provider)
 
 
+@cli.command(name='add-slaves')
+@click.argument('cluster-name')
+@click.option('--num-slaves', type=click.IntRange(min=1), required=True)
+@click.option('--install-hdfs/--no-install-hdfs', default=False)
+@click.option('--hdfs-version')
+@click.option('--hdfs-download-source',
+              help="URL to download Hadoop from.",
+              default='http://www.apache.org/dyn/closer.lua/hadoop/common/hadoop-{v}/hadoop-{v}.tar.gz?as_json',
+              show_default=True)
+@click.option('--install-spark/--no-install-spark', default=True)
+@click.option('--spark-version',
+              help="Spark release version to install.")
+@click.option('--spark-git-commit',
+              help="Git commit to build Spark from. "
+                   "Set to 'latest' to build Spark from the latest commit on the "
+                   "repository's default branch.")
+@click.option('--spark-git-repository',
+              help="Git repository to clone Spark from.",
+              default='https://github.com/apache/spark',
+              show_default=True)
+@click.option('--assume-yes/--no-assume-yes', default=False)
+@click.option('--ec2-key-name')
+@click.option('--ec2-identity-file',
+              type=click.Path(exists=True, dir_okay=False),
+              help="Path to SSH .pem file for accessing nodes.")
+@click.option('--ec2-instance-type', default='m3.medium', show_default=True)
+@click.option('--ec2-region', default='us-east-1', show_default=True)
+# We set some of these defaults to empty strings because of boto3's parameter validation.
+# See: https://github.com/boto/boto3/issues/400
+@click.option('--ec2-availability-zone', default='')
+@click.option('--ec2-ami')
+@click.option('--ec2-user')
+@click.option('--ec2-spot-price', type=float)
+@click.option('--ec2-vpc-id', default='', help="Leave empty for default VPC.")
+@click.option('--ec2-subnet-id', default='')
+@click.option('--ec2-instance-profile-name', default='')
+@click.option('--ec2-placement-group', default='')
+@click.option('--ec2-tenancy', default='default')
+@click.option('--ec2-ebs-optimized/--no-ec2-ebs-optimized', default=False)
+@click.option('--ec2-instance-initiated-shutdown-behavior', default='stop',
+              type=click.Choice(['stop', 'terminate']))
+@click.pass_context
+def add_slave(
+        cli_context,
+        cluster_name,
+        num_slaves,
+        install_hdfs,
+        hdfs_version,
+        hdfs_download_source,
+        install_spark,
+        spark_version,
+        spark_git_commit,
+        spark_git_repository,
+        assume_yes,
+        ec2_key_name,
+        ec2_identity_file,
+        ec2_instance_type,
+        ec2_region,
+        ec2_availability_zone,
+        ec2_ami,
+        ec2_user,
+        ec2_spot_price,
+        ec2_vpc_id,
+        ec2_subnet_id,
+        ec2_instance_profile_name,
+        ec2_placement_group,
+        ec2_tenancy,
+        ec2_ebs_optimized,
+        ec2_instance_initiated_shutdown_behavior):
+    """
+    Add slaves from an existing cluster.
+    """
+    provider = cli_context.obj['provider']
+    services = []
+
+    option_requires(
+        option='--install-hdfs',
+        requires_all=['--hdfs-version'],
+        scope=locals())
+    option_requires(
+        option='--install-spark',
+        requires_any=[
+            '--spark-version',
+            '--spark-git-commit'],
+        scope=locals())
+    mutually_exclusive(
+        options=[
+            '--spark-version',
+            '--spark-git-commit'],
+        scope=locals())
+    option_requires(
+        option='--provider',
+        conditional_value='ec2',
+        requires_all=[
+            '--ec2-key-name',
+            '--ec2-identity-file',
+            '--ec2-instance-type',
+            '--ec2-region',
+            '--ec2-ami',
+            '--ec2-user'],
+        scope=locals())
+    # The subnet is required for non-default VPCs because EC2 does not
+    # support user-defined default subnets.
+    # See: https://forums.aws.amazon.com/thread.jspa?messageID=707417
+    #      https://github.com/mitchellh/packer/issues/1935#issuecomment-111235752
+    option_requires(
+        option='--ec2-vpc-id',
+        requires_all=['--ec2-subnet-id'],
+        scope=locals())
+
+    if install_hdfs:
+        hdfs = HDFS(version=hdfs_version, download_source=hdfs_download_source)
+        services += [hdfs]
+    if install_spark:
+        if spark_version:
+            spark = Spark(version=spark_version)
+        elif spark_git_commit:
+            print(
+                "Warning: Building Spark takes a long time. "
+                "e.g. 15-20 minutes on an m3.xlarge instance on EC2.")
+            if spark_git_commit == 'latest':
+                spark_git_commit = get_latest_commit(spark_git_repository)
+                print("Building Spark at latest commit: {c}".format(c=spark_git_commit))
+            spark = Spark(
+                git_commit=spark_git_commit,
+                git_repository=spark_git_repository)
+        services += [spark]
+
+    if provider == 'ec2':
+        return ec2.add_slaves(
+            cluster_name=cluster_name,
+            num_slaves=num_slaves,
+            services=services,
+            assume_yes=assume_yes,
+            key_name=ec2_key_name,
+            identity_file=ec2_identity_file,
+            instance_type=ec2_instance_type,
+            region=ec2_region,
+            availability_zone=ec2_availability_zone,
+            ami=ec2_ami,
+            user=ec2_user,
+            spot_price=ec2_spot_price,
+            vpc_id=ec2_vpc_id,
+            subnet_id=ec2_subnet_id,
+            instance_profile_name=ec2_instance_profile_name,
+            placement_group=ec2_placement_group,
+            tenancy=ec2_tenancy,
+            ebs_optimized=ec2_ebs_optimized,
+            instance_initiated_shutdown_behavior=ec2_instance_initiated_shutdown_behavior)
+    else:
+        raise UnsupportedProviderError(provider)
+
+
 def get_latest_commit(github_repository: str):
     """
     Get the latest commit on the default branch of a repository hosted on GitHub.
