@@ -21,6 +21,8 @@ from .exceptions import (
     ClusterInvalidState,
     NothingToDo)
 from .ssh import generate_ssh_key_pair
+from .ssh import ssh_check_output
+from .ssh import get_ssh_client
 
 
 class NoDefaultVPC(Error):
