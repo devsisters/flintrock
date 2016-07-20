@@ -431,9 +431,12 @@ def provision_cluster(
         cluster: FlintrockCluster,
         services: list,
         user: str,
-        identity_file: str):
+        identity_file: str,
+        add_slaves: bool):
     """
     Connect to a freshly launched cluster and install the specified services.
+
+    If add_slaves is true, then newly added slaves would be connected and install those services.
     """
     partial_func = functools.partial(
         provision_node,
@@ -441,7 +444,10 @@ def provision_cluster(
         user=user,
         identity_file=identity_file,
         cluster=cluster)
-    hosts = [cluster.master_ip] + cluster.slave_ips
+    if add_slaves:
+        hosts = cluster.slave_ips
+    else:
+        hosts = [cluster.master_ip] + cluster.slave_ips
 
     _run_asynchronously(partial_func=partial_func, hosts=hosts)
 
@@ -462,6 +468,12 @@ def provision_cluster(
             """.format(
                 m=shlex.quote(json.dumps(manifest, indent=4, sort_keys=True)),
                 u=shlex.quote(user)))
+
+        if add_slaves:
+            for service in services:
+                service.configure(
+                    ssh_client=master_ssh_client,
+                    cluster=cluster)
 
         for service in services:
             service.configure_master(
