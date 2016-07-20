@@ -671,7 +671,218 @@ def launch(
             cluster=cluster,
             services=services,
             user=user,
-            identity_file=identity_file)
+            identity_file=identity_file,
+            add_slaves=False)
+
+    except (Exception, KeyboardInterrupt) as e:
+        # TODO: Cleanup cluster security group here.
+        print("There was a problem with the launch. Cleaning up...", file=sys.stderr)
+
+        if spot_requests:
+            request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
+            if any([r['State'] != 'active' for r in spot_requests]):
+                print("Canceling spot instance requests...", file=sys.stderr)
+                client.cancel_spot_instance_requests(
+                    SpotInstanceRequestIds=request_ids)
+            # Make sure we have the latest information on any launched spot instances.
+            spot_requests = client.describe_spot_instance_requests(
+                SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
+            instance_ids = [
+                r['InstanceId'] for r in spot_requests
+                if 'InstanceId' in r]
+            if instance_ids:
+                cluster_instances = list(
+                    ec2.instances.filter(InstanceIds=instance_ids))
+
+        if cluster_instances:
+            if not assume_yes:
+                yes = click.confirm(
+                    text="Do you want to terminate the {c} instances created by this operation?"
+                         .format(c=len(cluster_instances)),
+                    err=True,
+                    default=True)
+
+            if assume_yes or yes:
+                print("Terminating instances...", file=sys.stderr)
+                (ec2.instances
+                    .filter(InstanceIds=[instance.id for instance in cluster_instances])
+                    .terminate())
+
+        raise
+
+@timeit
+def add_slaves(
+        *,
+        cluster_name,
+        num_slaves,
+        services,
+        assume_yes,
+        key_name,
+        identity_file,
+        instance_type,
+        region,
+        availability_zone,
+        ami,
+        user,
+        spot_price=None,
+        vpc_id,
+        subnet_id,
+        instance_profile_name,
+        placement_group,
+        tenancy='default',
+        ebs_optimized=False,
+        instance_initiated_shutdown_behavior='stop'):
+    """
+    Add slaves to an existing cluster.
+    """
+    if not vpc_id:
+        vpc_id = get_default_vpc(region=region).id
+    else:
+        # If it's a non-default VPC -- i.e. the user set it up -- make sure it's
+        # configured correctly.
+        check_network_config(
+            region_name=region,
+            vpc_id=vpc_id,
+            subnet_id=subnet_id)
+
+    try:
+        security_groups = get_or_create_ec2_security_groups(
+            cluster_name=cluster_name,
+            vpc_id=vpc_id,
+            region=region)
+        block_device_mappings = get_ec2_block_device_mappings(
+            ami=ami,
+            region=region)
+    except botocore.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == 'InvalidAMIID.NotFound':
+            raise Error(
+                "Error: Could not find {ami} in region {region}.".format(
+                    ami=ami,
+                    region=region))
+        else:
+            raise
+
+    ec2 = boto3.resource(service_name='ec2', region_name=region)
+
+    num_instances = num_slaves
+    spot_requests = []
+    cluster_instances = []
+
+    try:
+        if spot_price:
+            print("Requesting {c} spot instances at a max price of ${p}...".format(
+                c=num_instances, p=spot_price))
+            client = ec2.meta.client
+            spot_requests = client.request_spot_instances(
+                SpotPrice=str(spot_price),
+                InstanceCount=num_instances,
+                LaunchSpecification={
+                    'ImageId': ami,
+                    'KeyName': key_name,
+                    'InstanceType': instance_type,
+                    'BlockDeviceMappings': block_device_mappings,
+                    'Placement': {
+                        'AvailabilityZone': availability_zone,
+                        'GroupName': placement_group},
+                    'SecurityGroupIds': [sg.id for sg in security_groups],
+                    'SubnetId': subnet_id,
+                    'IamInstanceProfile': {
+                        'Name': instance_profile_name},
+                    'EbsOptimized': ebs_optimized})['SpotInstanceRequests']
+
+            request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
+            pending_request_ids = request_ids
+
+            while pending_request_ids:
+                print("{grant} of {req} instances granted. Waiting...".format(
+                    grant=num_instances - len(pending_request_ids),
+                    req=num_instances))
+                time.sleep(30)
+                spot_requests = client.describe_spot_instance_requests(
+                    SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
+
+                failed_requests = [r for r in spot_requests if r['State'] == 'failed']
+                if failed_requests:
+                    failure_reasons = {r['Status']['Code'] for r in failed_requests}
+                    raise Error(
+                        "The spot request failed for the following reason{s}: {reasons}"
+                        .format(
+                            s='' if len(failure_reasons) == 1 else 's',
+                            reasons=', '.join(failure_reasons)))
+
+                pending_request_ids = [
+                    r['SpotInstanceRequestId'] for r in spot_requests
+                    if r['State'] == 'open']
+
+            print("All {c} instances granted.".format(c=num_instances))
+
+            cluster_instances = list(
+                ec2.instances.filter(
+                    InstanceIds=[r['InstanceId'] for r in spot_requests]))
+        else:
+            print("Launching {c} instances...".format(c=num_instances))
+
+            cluster_instances = ec2.create_instances(
+                MinCount=num_instances,
+                MaxCount=num_instances,
+                ImageId=ami,
+                KeyName=key_name,
+                InstanceType=instance_type,
+                BlockDeviceMappings=block_device_mappings,
+                Placement={
+                    'AvailabilityZone': availability_zone,
+                    'Tenancy': tenancy,
+                    'GroupName': placement_group},
+                SecurityGroupIds=[sg.id for sg in security_groups],
+                SubnetId=subnet_id,
+                IamInstanceProfile={
+                    'Name': instance_profile_name},
+                EbsOptimized=ebs_optimized,
+                InstanceInitiatedShutdownBehavior=instance_initiated_shutdown_behavior)
+
+        time.sleep(10)  # AWS metadata eventual consistency tax.
+
+        master_instance = None
+        slave_instances = cluster_instances
+
+        (ec2.instances
+            .filter(InstanceIds=[i.id for i in slave_instances])
+            .create_tags(
+                Tags=[
+                    {'Key': 'flintrock-role', 'Value': 'slave'},
+                    {'Key': 'Name', 'Value': '{c}-slave'.format(c=cluster_name)}]))
+
+        master_instance = get_cluster(
+                cluster_name=cluster_name,
+                region=region,
+                vpc_id=vpc_id).master_instance
+        slave_instances = cluster_instances
+
+        master_ssh_client = get_ssh_client(
+                user=user,
+                host=master_instance.public_ip_address,
+                identity_file=identity_file)
+        with master_ssh_client:
+            private_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/id_rsa")
+            public_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/authorized_keys | grep flintrock | tail -n 1")
+
+        cluster = EC2Cluster(
+            name=cluster_name,
+            region=region,
+            vpc_id=vpc_id,
+            ssh_key_pair=namedtuple('KeyPair', ['public', 'private'])(public_key, private_key),
+            master_instance=master_instance,
+            slave_instances=slave_instances)
+
+
+        cluster.wait_for_state('running')
+
+        provision_cluster(
+            cluster=cluster,
+            services=services,
+            user=user,
+            identity_file=identity_file,
+            add_slaves=True)
 
     except (Exception, KeyboardInterrupt) as e:
         # TODO: Cleanup cluster security group here.
