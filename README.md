@@ -18,7 +18,7 @@ Here's a quick way to launch a cluster on EC2, assuming you already have an [AWS
 ```sh
 flintrock launch test-cluster \
     --num-slaves 1 \
-    --spark-version 1.6.1 \
+    --spark-version 1.6.2 \
     --ec2-key-name key_name \
     --ec2-identity-file /path/to/key.pem \
     --ec2-ami ami-08111162 \
@@ -58,9 +58,17 @@ That's not all. Flintrock has a few more [features](#features) that you may find
 
 ## Installation
 
-Before using Flintrock, take a quick look at the [copyright](https://github.com/nchammas/flintrock/blob/master/COPYRIGHT) notice and [license](https://github.com/nchammas/flintrock/blob/master/LICENSE) and make sure you're OK with their terms.
+Before using Flintrock, take a quick look at the
+[copyright](https://github.com/nchammas/flintrock/blob/master/COPYRIGHT)
+notice and [license](https://github.com/nchammas/flintrock/blob/master/LICENSE)
+and make sure you're OK with their terms.
 
-**Flintrock requires Python 3.4 or newer**, unless you are using one of our **standalone packages**. Flintrock has been thoroughly tested only on OS X, but it should run on all POSIX systems. We have plans to [add Windows support](https://github.com/nchammas/flintrock/issues/46) in the future, too.
+**Flintrock requires Python 3.4 or newer**, unless you are using one
+of our **standalone packages**. Flintrock has been thoroughly tested
+only on OS X, but it should run on all POSIX systems.
+A motivated contributor should be able to add
+[Windows support](https://github.com/nchammas/flintrock/issues/46)
+without too much trouble, too.
 
 ### Release version
 
@@ -91,7 +99,7 @@ unzip it to a location of your choice, and run the `flintrock` executable inside
 For example:
 
 ```sh
-flintrock_version="0.4.0"
+flintrock_version="0.5.0"
 
 curl --location --remote-name "https://github.com/nchammas/flintrock/releases/download/v$flintrock_version/Flintrock-$flintrock_version-standalone-OSX-x86_64.zip"
 unzip -q -d flintrock "Flintrock-$flintrock_version-standalone-OSX-x86_64.zip"
@@ -186,7 +194,7 @@ provider: ec2
 
 services:
   spark:
-    version: 1.6.1
+    version: 1.6.2
 
 launch:
   num-slaves: 1
