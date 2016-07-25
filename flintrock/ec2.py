@@ -203,8 +203,7 @@ class EC2Cluster(FlintrockCluster):
         ec2 = boto3.resource(service_name='ec2', region_name=self.region)
 
         # self.remove_slaves_check() (?)
-        removed_slave_instances, self.slave_instances = \
-            self.slave_instances[0:num_slaves], self.slave_instances[num_slaves:]
+        removed_slave_instances, self.slave_instances = self.select_removed_slaves(num_slaves)
 
         if self.state == 'running':
             super().remove_slaves(user=user, identity_file=identity_file)
@@ -225,6 +224,20 @@ class EC2Cluster(FlintrockCluster):
         (ec2.instances
             .filter(InstanceIds=[instance.id for instance in removed_slave_instances])
             .terminate())
+
+    def select_removed_slaves(self, num_slaves: int):
+        removed_slave_instances = []
+        slave_instances = []
+        for instance in self.slave_instances:
+            if instance.instance_lifecycle == 'spot' and num_slaves > 0:
+                removed_slave_instances.append(instance)
+                num_slaves -= 1
+            else:
+                slave_instances.append(instance)
+        if num_slaves > 0:
+            removed_slave_instances += slave_instances[0:num_slaves]
+            slave_instances = slave_instances[num_slaves:]
+        return removed_slave_instances, slave_instances
 
     def run_command_check(self):
         if self.state != 'running':
