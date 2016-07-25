@@ -780,10 +780,11 @@ def add_slaves(
             subnet_id=subnet_id)
 
     try:
-        security_groups = get_or_create_ec2_security_groups(
+        flintrock_security_groups = get_or_create_flintrock_security_groups(
             cluster_name=cluster_name,
             vpc_id=vpc_id,
             region=region)
+        security_group_ids = [sg.id for sg in flintrock_security_groups]
         block_device_mappings = get_ec2_block_device_mappings(
             ami=ami,
             region=region)
@@ -818,7 +819,7 @@ def add_slaves(
                     'Placement': {
                         'AvailabilityZone': availability_zone,
                         'GroupName': placement_group},
-                    'SecurityGroupIds': [sg.id for sg in security_groups],
+                    'SecurityGroupIds': security_group_ids,
                     'SubnetId': subnet_id,
                     'IamInstanceProfile': {
                         'Name': instance_profile_name},
@@ -867,7 +868,7 @@ def add_slaves(
                     'AvailabilityZone': availability_zone,
                     'Tenancy': tenancy,
                     'GroupName': placement_group},
-                SecurityGroupIds=[sg.id for sg in security_groups],
+                SecurityGroupIds=security_group_ids,
                 SubnetId=subnet_id,
                 IamInstanceProfile={
                     'Name': instance_profile_name},
@@ -890,7 +891,6 @@ def add_slaves(
                 cluster_name=cluster_name,
                 region=region,
                 vpc_id=vpc_id).master_instance
-        slave_instances = cluster_instances
 
         master_ssh_client = get_ssh_client(
                 user=user,

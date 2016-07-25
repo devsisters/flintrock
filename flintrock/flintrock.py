@@ -350,6 +350,10 @@ def launch(
 @click.option('--install-spark/--no-install-spark', default=True)
 @click.option('--spark-version',
               help="Spark release version to install.")
+@click.option('--spark-download-source',
+              help="URL to download a release of Spark from.",
+              default='https://s3.amazonaws.com/spark-related-packages/spark-{v}-bin-hadoop2.6.tgz',
+              show_default=True)
 @click.option('--spark-git-commit',
               help="Git commit to build Spark from. "
                    "Set to 'latest' to build Spark from the latest commit on the "
@@ -391,6 +395,7 @@ def add_slave(
         spark_version,
         spark_git_commit,
         spark_git_repository,
+        spark_download_source,
         assume_yes,
         ec2_key_name,
         ec2_identity_file,
@@ -453,7 +458,7 @@ def add_slave(
         services += [hdfs]
     if install_spark:
         if spark_version:
-            spark = Spark(version=spark_version)
+            spark = Spark(version=spark_version, download_source=spark_download_source)
         elif spark_git_commit:
             print(
                 "Warning: Building Spark takes a long time. "
