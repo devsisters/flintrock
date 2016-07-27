@@ -1019,6 +1019,10 @@ def config_to_click(config: dict) -> dict:
             list(config['launch'].items()) +
             list(ec2_configs.items()) +
             list(service_configs.items())),
+        'add-slaves': dict(
+            list(config['launch'].items()) +
+            list(ec2_configs.items()) +
+            list(service_configs.items())),
         'describe': ec2_configs,
         'destroy': ec2_configs,
         'login': ec2_configs,
