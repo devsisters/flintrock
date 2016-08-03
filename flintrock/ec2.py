@@ -757,6 +757,7 @@ def launch(
 
         raise
 
+
 @timeit
 def add_slaves(
         *,
@@ -901,14 +902,14 @@ def add_slaves(
                     {'Key': 'Name', 'Value': '{c}-slave'.format(c=cluster_name)}]))
 
         master_instance = get_cluster(
-                cluster_name=cluster_name,
-                region=region,
-                vpc_id=vpc_id).master_instance
+            cluster_name=cluster_name,
+            region=region,
+            vpc_id=vpc_id).master_instance
 
         master_ssh_client = get_ssh_client(
-                user=user,
-                host=master_instance.public_ip_address,
-                identity_file=identity_file)
+            user=user,
+            host=master_instance.public_ip_address,
+            identity_file=identity_file)
         with master_ssh_client:
             private_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/id_rsa")
             public_key = ssh_check_output(master_ssh_client, "cat ~/.ssh/authorized_keys | grep flintrock | tail -n 1")
@@ -920,7 +921,6 @@ def add_slaves(
             ssh_key_pair=namedtuple('KeyPair', ['public', 'private'])(public_key, private_key),
             master_instance=master_instance,
             slave_instances=slave_instances)
-
 
         cluster.wait_for_state('running')
 
