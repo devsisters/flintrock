@@ -476,9 +476,10 @@ def provision_cluster(
                     cluster=cluster)
 
         for service in services:
-            service.configure_master(
-                ssh_client=master_ssh_client,
-                cluster=cluster)
+            if not (add_slaves and type(service) is UserScript):
+                service.configure_master(
+                    ssh_client=master_ssh_client,
+                    cluster=cluster)
 
     partial_func = functools.partial(
         configure_slave,
