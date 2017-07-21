@@ -230,6 +230,7 @@ class EC2Cluster(FlintrockCluster):
             *,
             user: str,
             identity_file: str,
+            instance_type: str,
             num_slaves: int,
             spot_price: float,
             assume_yes: bool):
@@ -272,7 +273,7 @@ class EC2Cluster(FlintrockCluster):
             ami=self.master_instance.image_id,
             assume_yes=assume_yes,
             key_name=self.master_instance.key_name,
-            instance_type=self.master_instance.instance_type,
+            instance_type=instance_type,
             block_device_mappings=block_device_mappings,
             availability_zone=availability_zone,
             placement_group=self.master_instance.placement['GroupName'],
