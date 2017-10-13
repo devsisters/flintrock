@@ -8,6 +8,7 @@ install:
 script:
   - "py.test ./tests/test_static.py"
   - "py.test ./tests/test_flintrock.py"
+  - "py.test ./tests/test_core.py"
   - "pip install -r requirements/maintainer.pip"
   - "py.test ./tests/test_pyinstaller_packaging.py"
 addons:
@@ -15,3 +16,5 @@ addons:
     paths:
       - '$(ls -1 dist/*.zip | tr "\n" ":")'
   s3_region: "us-east-1"
+notifications:
+  email: false
