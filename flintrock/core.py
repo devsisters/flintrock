@@ -268,7 +268,7 @@ class FlintrockCluster:
     def add_slaves_check(self):
         pass
 
-    def add_slaves(self, *, user: str, identity_file: str, new_hosts: list):
+    def add_slaves(self, *, user: str, identity_file: str, new_hosts: list, num_slaves: int):
         """
         Add new slaves to the cluster.
 
@@ -297,7 +297,9 @@ class FlintrockCluster:
             for service in self.services:
                 service.configure_master(
                     ssh_client=master_ssh_client,
-                    cluster=self)
+                    cluster=self,
+                    num_slaves=num_slaves,
+                    check_slave_number=True)
 
     def remove_slaves(self, *, user: str, identity_file: str):
         """
