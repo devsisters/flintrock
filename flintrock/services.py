@@ -4,6 +4,7 @@ import shlex
 import sys
 import textwrap
 import urllib.request
+import time
 
 # External modules
 import paramiko
@@ -318,7 +319,7 @@ class Spark(FlintrockService):
         initial_slave_number = 0
         if check_slave_number:
             spark_master_status = self.health_check(cluster.master_host)
-            initial_slave_number = len(spark_master_status['workers'])
+            initial_slave_number = len([worker for worker in spark_master_status['workers'] if worker["state"]=="ALIVE"])
         # This loop is a band-aid for: https://github.com/nchammas/flintrock/issues/129
         attempt_limit = 3
         for attempt in range(attempt_limit):
@@ -341,8 +342,10 @@ class Spark(FlintrockService):
             )
             if check_slave_number:
                 temp_spark_master_status = self.health_check(cluster.master_host)
-                slave_number = len(temp_spark_master_status['workers'])
+                slave_number = len([worker for worker in temp_spark_master_status['workers'] if worker["state"]=="ALIVE"])
                 if slave_number - initial_slave_number < num_slaves:
+                    print("before attempt, sleep for 30 seconds...")
+                    time.sleep(30)
                     continue
                 else:
                     break
