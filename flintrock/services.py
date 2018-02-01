@@ -350,10 +350,10 @@ class Spark(FlintrockService):
                         break
                 break
             except socket.timeout as e:
-                logger.debug(
+                raise Exception(
                     "Timed out waiting for Spark master to come up.{}"
                     .format(" Trying again..." if attempt < attempt_limit - 1 else "")
-                )
+                    )
         else:
             raise Exception("Timed out waiting for Spark master to come up.")
 
@@ -368,7 +368,6 @@ class Spark(FlintrockService):
                 .decode('utf-8')
             )
             # TODO: Don't print here. Return this and let the caller print.
-            logger.info("Spark online.")
             return spark_master_status
         except Exception as e:
             # TODO: Catch a more specific problem known to be related to Spark not
