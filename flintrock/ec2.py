@@ -305,7 +305,8 @@ class EC2Cluster(FlintrockCluster):
         super().add_slaves(
             user=user,
             identity_file=identity_file,
-            new_hosts=new_slaves)
+            new_hosts=new_slaves,
+            num_slaves=num_slaves)
 
     @timeit
     def remove_slaves(self, *, user: str, identity_file: str, num_slaves: int):
