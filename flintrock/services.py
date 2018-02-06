@@ -315,7 +315,8 @@ class Spark(FlintrockService):
             num_slaves: int=0,
             is_first: bool=False):
         host = ssh_client.get_transport().getpeername()[0]
-        print("[{h}] Configuring Spark master...".format(h=host))
+        print("[{h}] Before Configuring Spark master sleep for 60sec".format(h=host))
+        time.sleep(60)
 
         initial_slave_number = 0
         if num_slaves > 0:
