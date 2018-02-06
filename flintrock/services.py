@@ -1,6 +1,7 @@
 import json
 import os
 import shlex
+import socket
 import sys
 import textwrap
 import urllib.request
@@ -326,34 +327,39 @@ class Spark(FlintrockService):
         # This loop is a band-aid for: https://github.com/nchammas/flintrock/issues/129
         attempt_limit = 3
         for attempt in range(attempt_limit):
-            ssh_check_output(
-                client=ssh_client,
-                # Maybe move this shell script out to some separate
-                # file/folder for the Spark service.
-                command="""
-                    spark/sbin/start-all.sh
+            try:
+                ssh_check_output(
+                    client=ssh_client,
+                    # Maybe move this shell script out to some separate
+                    # file/folder for the Spark service.
+                    command="""
+                        spark/sbin/start-all.sh
 
-                    master_ui_response_code=0
-                    while [ "$master_ui_response_code" -ne 200 ]; do
-                        sleep 1
-                        master_ui_response_code="$(
-                            curl --head --silent --output /dev/null \
-                                --write-out "%{{http_code}}" {m}:8080
-                        )"
-                    done
-                """.format(m=shlex.quote(cluster.master_host)),
-                timeout_seconds=90
-            )
-            if check_slave_number:
-                temp_spark_master_status = self.health_check(cluster.master_host)
-                slave_number = len([worker for worker in temp_spark_master_status['workers'] if worker["state"]=="ALIVE"])
-                if slave_number - initial_slave_number < num_slaves:
-                    print("slave doesn't attatch to master, sleep for 30 seconds...")
-                    time.sleep(30)
-                    continue
-                else:
-                    break
-            break
+                        master_ui_response_code=0
+                        while [ "$master_ui_response_code" -ne 200 ]; do
+                            sleep 1
+                            master_ui_response_code="$(
+                                curl --head --silent --output /dev/null \
+                                    --write-out "%{{http_code}}" {m}:8080
+                            )"
+                        done
+                    """.format(m=shlex.quote(cluster.master_host)),
+                    timeout_seconds=90
+                )
+                if check_slave_number:
+                    temp_spark_master_status = self.health_check(cluster.master_host)
+                    slave_number = len([worker for worker in temp_spark_master_status['workers'] if worker["state"]=="ALIVE"])
+                    if slave_number - initial_slave_number < num_slaves:
+                        print("slave doesn't attatch to master, sleep for 30 seconds...")
+                        time.sleep(30)
+                        continue
+                    else:
+                        break
+            except socket.timeout as e:
+                print(
+                    "Timed out waiting for spark master to come up.{}"
+                    .format(" Trying again..." if attempt < attempt_limit - 1 else "")
+                    )
         else:
             raise Exception("Timed out waiting for Spark master to come up.")
 
