@@ -318,7 +318,7 @@ class Spark(FlintrockService):
 
         initial_slave_number = 0
         if num_slaves > 0:
-            check_slave_number = 0
+            check_slave_number = True
         if check_slave_number:
             if not is_first:
                 spark_master_status = self.health_check(cluster.master_host)
