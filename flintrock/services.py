@@ -312,14 +312,17 @@ class Spark(FlintrockService):
             ssh_client: paramiko.client.SSHClient,
             cluster: FlintrockCluster,
             num_slaves: int=0,
-            check_slave_number: bool=False):
+            is_first: bool=False):
         host = ssh_client.get_transport().getpeername()[0]
         print("[{h}] Configuring Spark master...".format(h=host))
 
         initial_slave_number = 0
+        if num_slaves > 0:
+            check_slave_number = 0
         if check_slave_number:
-            spark_master_status = self.health_check(cluster.master_host)
-            initial_slave_number = len([worker for worker in spark_master_status['workers'] if worker["state"]=="ALIVE"])
+            if not is_first:
+                spark_master_status = self.health_check(cluster.master_host)
+                initial_slave_number = len([worker for worker in spark_master_status['workers'] if worker["state"]=="ALIVE"])
         # This loop is a band-aid for: https://github.com/nchammas/flintrock/issues/129
         attempt_limit = 3
         for attempt in range(attempt_limit):
@@ -344,7 +347,7 @@ class Spark(FlintrockService):
                 temp_spark_master_status = self.health_check(cluster.master_host)
                 slave_number = len([worker for worker in temp_spark_master_status['workers'] if worker["state"]=="ALIVE"])
                 if slave_number - initial_slave_number < num_slaves:
-                    print("before attempt, sleep for 30 seconds...")
+                    print("slave doesn't attatch to master, sleep for 30 seconds...")
                     time.sleep(30)
                     continue
                 else:
