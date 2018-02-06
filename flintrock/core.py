@@ -297,7 +297,8 @@ class FlintrockCluster:
             for service in self.services:
                 service.configure_master(
                     ssh_client=master_ssh_client,
-                    cluster=self)
+                    cluster=self,
+                    num_slaves=num_slaves)
 
     def remove_slaves(self, *, user: str, identity_file: str):
         """
@@ -603,7 +604,8 @@ def provision_cluster(
         cluster: FlintrockCluster,
         services: list,
         user: str,
-        identity_file: str):
+        identity_file: str,
+        num_slaves: int):
     """
     Connect to a freshly launched cluster and install the specified services.
     """
@@ -641,7 +643,9 @@ def provision_cluster(
         for service in services:
             service.configure_master(
                 ssh_client=master_ssh_client,
-                cluster=cluster)
+                cluster=cluster,
+                num_slaves=num_slaves,
+                is_first=True)
 
     for service in services:
         service.health_check(master_host=cluster.master_host)

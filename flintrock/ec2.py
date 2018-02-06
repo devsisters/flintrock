@@ -952,7 +952,8 @@ def launch(
             cluster=cluster,
             services=services,
             user=user,
-            identity_file=identity_file)
+            identity_file=identity_file,
+            num_slaves=num_slaves)
 
         return cluster
     except (Exception, KeyboardInterrupt) as e:

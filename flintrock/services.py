@@ -367,10 +367,20 @@ class Spark(FlintrockService):
     def configure_master(
             self,
             ssh_client: paramiko.client.SSHClient,
-            cluster: FlintrockCluster):
+            cluster: FlintrockCluster,
+            num_slaves: int=0,
+            is_first: bool=False):
         host = ssh_client.get_transport().getpeername()[0]
         logger.info("[{h}] Configuring Spark master...".format(h=host))
 
+<<<<<<< HEAD
+        initial_slave_number = 0
+        if num_slaves > 0:
+            check_slave_number = True
+        if check_slave_number:
+            if not is_first:
+                spark_master_status = self.health_check(cluster.master_host)
+                initial_slave_number = len([worker for worker in spark_master_status['workers'] if worker["state"]=="ALIVE"])
         # This loop is a band-aid for: https://github.com/nchammas/flintrock/issues/129
         attempt_limit = 3
         for attempt in range(attempt_limit):
@@ -393,6 +403,15 @@ class Spark(FlintrockService):
                     """.format(m=shlex.quote(cluster.master_host)),
                     timeout_seconds=90
                 )
+                if check_slave_number:
+                    temp_spark_master_status = self.health_check(cluster.master_host)
+                    slave_number = len([worker for worker in temp_spark_master_status['workers'] if worker["state"]=="ALIVE"])
+                    if slave_number - initial_slave_number < num_slaves:
+                        print("slave doesn't attatch to master, sleep for 30 seconds...")
+                        time.sleep(30)
+                        continue
+                    else:
+                        break
                 break
             except socket.timeout as e:
                 logger.debug(
@@ -406,7 +425,7 @@ class Spark(FlintrockService):
         spark_master_ui = 'http://{m}:8080/json/'.format(m=master_host)
 
         try:
-            json.loads(
+            spark_master_status = json.loads(
                 urllib.request
                 .urlopen(spark_master_ui)
                 .read()
@@ -414,6 +433,7 @@ class Spark(FlintrockService):
             )
             # TODO: Don't print here. Return this and let the caller print.
             logger.info("Spark online.")
+            return spark_master_status
         except Exception as e:
             # TODO: Catch a more specific problem known to be related to Spark not
             #       being up; provide a slightly better error message, and don't
