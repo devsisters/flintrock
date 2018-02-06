@@ -309,8 +309,7 @@ class FlintrockCluster:
                 service.configure_master(
                     ssh_client=master_ssh_client,
                     cluster=self,
-                    num_slaves=num_slaves,
-                    check_slave_number=True)
+                    num_slaves=num_slaves)
 
     def remove_slaves(self, *, user: str, identity_file: str):
         """
@@ -600,7 +599,8 @@ def provision_cluster(
         cluster: FlintrockCluster,
         services: list,
         user: str,
-        identity_file: str):
+        identity_file: str,
+        num_slaves: int):
     """
     Connect to a freshly launched cluster and install the specified services.
     """
@@ -642,7 +642,9 @@ def provision_cluster(
         for service in services:
             service.configure_master(
                 ssh_client=master_ssh_client,
-                cluster=cluster)
+                cluster=cluster,
+                num_slaves=num_slaves,
+                is_first=True)
 
     # NOTE: We sleep here so that the slave services have time to come up.
     #       If we refactor stuff to have a start_slave() that blocks until

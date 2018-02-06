@@ -936,7 +936,8 @@ def launch(
         cluster=cluster,
         services=services,
         user=user,
-        identity_file=identity_file)
+        identity_file=identity_file,
+        num_slaves=num_slaves)
 
 
 def get_cluster(*, cluster_name: str, region: str, vpc_id: str) -> EC2Cluster:
