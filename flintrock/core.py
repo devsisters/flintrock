@@ -268,7 +268,7 @@ class FlintrockCluster:
     def add_slaves_check(self):
         pass
 
-    def add_slaves(self, *, user: str, identity_file: str, new_hosts: list):
+    def add_slaves(self, *, user: str, identity_file: str, new_hosts: list, num_slaves: int):
         """
         Add new slaves to the cluster.
 
