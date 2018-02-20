@@ -373,7 +373,6 @@ class Spark(FlintrockService):
         host = ssh_client.get_transport().getpeername()[0]
         logger.info("[{h}] Configuring Spark master...".format(h=host))
 
-<<<<<<< HEAD
         initial_slave_number = 0
         if num_slaves > 0:
             check_slave_number = True
