@@ -326,7 +326,7 @@ class Spark(FlintrockService):
                 spark_master_status = self.health_check(cluster.master_host)
                 initial_slave_number = len([worker for worker in spark_master_status['workers'] if worker["state"]=="ALIVE"])
         # This loop is a band-aid for: https://github.com/nchammas/flintrock/issues/129
-        attempt_limit = 3
+        attempt_limit = 5
         for attempt in range(attempt_limit):
             try:
                 ssh_check_output(
