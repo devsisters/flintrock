@@ -212,7 +212,7 @@ class HDFS(FlintrockService):
                             )"
                         done
                     """.format(m=shlex.quote(cluster.master_host)),
-                    timeout_seconds=90
+                    timeout_seconds=300
                 )
                 break
             except socket.timeout as e:
