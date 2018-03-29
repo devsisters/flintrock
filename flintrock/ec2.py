@@ -1029,6 +1029,8 @@ def _get_cluster_name(instance: 'boto3.resources.factory.ec2.Instance') -> str:
         if group['GroupName'].startswith('flintrock-'):
             return group['GroupName'].replace('flintrock-', '', 1)
     else:
+        if instance.state != 16:
+            return "Not Running Instance"
         raise Exception("Could not extract cluster name from instance: {i}".format(
             i=instance.id))
 
@@ -1067,7 +1069,10 @@ def _compose_cluster(*, name: str, region: str, vpc_id: str, instances: list) ->
     Compose an EC2Cluster object from a set of raw EC2 instances representing
     a Flintrock cluster.
     """
-    (master_instance, slave_instances) = _get_cluster_master_slaves(instances)
+    try:
+        (master_instance, slave_instances) = _get_cluster_master_slaves(instances)
+    except:
+        (master_instance, slave_instances) = (None, [])
 
     cluster = EC2Cluster(
         name=name,
