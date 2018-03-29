@@ -401,7 +401,7 @@ class Spark(FlintrockService):
                             )"
                         done
                     """.format(m=shlex.quote(cluster.master_host)),
-                    timeout_seconds=90
+                    timeout_seconds=300
                 )
                 if check_slave_number:
                     temp_spark_master_status = self.health_check(cluster.master_host)
