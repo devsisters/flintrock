@@ -703,6 +703,67 @@ def _create_instances(
                             'Arn': instance_profile_arn},
                         'EbsOptimized': ebs_optimized,
                         'UserData': user_data})['SpotInstanceRequests']
+
+                request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
+
+                time.sleep(30)
+                spot_requests = client.describe_spot_instance_requests(
+                    SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
+
+                failed_requests = [r for r in spot_requests if r['State'] == 'failed']
+                if failed_requests:
+                    failure_reasons = {r['Status']['Code'] for r in failed_requests}
+                    raise Error(
+                        "The spot request failed for the following reason{s}: {reasons}"
+                        .format(
+                            s='' if len(failure_reasons) == 1 else 's',
+                            reasons=', '.join(failure_reasons)))
+
+                pending_request_ids = [
+                    r['SpotInstanceRequestId'] for r in spot_requests
+                    if r['State'] == 'open']
+
+                print("{grant} of {req} instances granted. Waiting...".format(
+                    grant=num_instances - len(pending_request_ids),
+                    req=num_instances))
+
+                remaining_num_instances = len(pending_request_ids)
+
+                block_cluster_instances = list(
+                    ec2.instances.filter(
+                        Filters=[
+                            {'Name': 'instance-id', 'Values': [r.get('InstanceId', '') for r in spot_requests]}
+                        ]))
+
+                demand_cluster_instances = list()
+
+                if remaining_num_instances > 0:
+                    client.cancel_spot_instance_requests(
+                        SpotInstanceRequestIds=pending_request_ids)
+
+                    print("cancel success, launch {} on-demand instances".format(len(pending_request_ids)))
+
+                    demand_cluster_instances = ec2.create_instances(
+                        MinCount=remaining_num_instances,
+                        MaxCount=remaining_num_instances,
+                        ImageId=ami,
+                        KeyName=key_name,
+                        InstanceType=instance_type,
+                        BlockDeviceMappings=block_device_mappings,
+                        Placement={
+                            'AvailabilityZone': availability_zone,
+                            'Tenancy': tenancy,
+                            'GroupName': placement_group},
+                        SecurityGroupIds=security_group_ids,
+                        SubnetId=subnet_id,
+                        IamInstanceProfile={
+                            'Arn': instance_profile_arn},
+                        EbsOptimized=ebs_optimized,
+                        InstanceInitiatedShutdownBehavior=instance_initiated_shutdown_behavior,
+                        UserData=user_data)
+
+                cluster_instances = block_cluster_instances + demand_cluster_instances
+
             else:
                 spot_requests = client.request_spot_instances(
                     SpotPrice=str(spot_price),
@@ -722,37 +783,38 @@ def _create_instances(
                         'EbsOptimized': ebs_optimized,
                         'UserData': user_data})['SpotInstanceRequests']
 
-            request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
-            pending_request_ids = request_ids
+                request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
+                pending_request_ids = request_ids
 
-            while pending_request_ids:
-                print("{grant} of {req} instances granted. Waiting...".format(
-                    grant=num_instances - len(pending_request_ids),
-                    req=num_instances))
-                time.sleep(30)
-                spot_requests = client.describe_spot_instance_requests(
-                    SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
+                while pending_request_ids:
+                    print("{grant} of {req} instances granted. Waiting...".format(
+                        grant=num_instances - len(pending_request_ids),
+                        req=num_instances))
+                    time.sleep(30)
+                    spot_requests = client.describe_spot_instance_requests(
+                        SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
 
-                failed_requests = [r for r in spot_requests if r['State'] == 'failed']
-                if failed_requests:
-                    failure_reasons = {r['Status']['Code'] for r in failed_requests}
-                    raise Error(
-                        "The spot request failed for the following reason{s}: {reasons}"
-                        .format(
-                            s='' if len(failure_reasons) == 1 else 's',
-                            reasons=', '.join(failure_reasons)))
+                    failed_requests = [r for r in spot_requests if r['State'] == 'failed']
+                    if failed_requests:
+                        failure_reasons = {r['Status']['Code'] for r in failed_requests}
+                        raise Error(
+                            "The spot request failed for the following reason{s}: {reasons}"
+                            .format(
+                                s='' if len(failure_reasons) == 1 else 's',
+                                reasons=', '.join(failure_reasons)))
 
-                pending_request_ids = [
-                    r['SpotInstanceRequestId'] for r in spot_requests
-                    if r['State'] == 'open']
+                    pending_request_ids = [
+                        r['SpotInstanceRequestId'] for r in spot_requests
+                        if r['State'] == 'open']
+
+                cluster_instances = list(
+                    ec2.instances.filter(
+                        Filters=[
+                            {'Name': 'instance-id', 'Values': [r['InstanceId'] for r in spot_requests]}
+                        ]))
 
             print("All {c} instances granted.".format(c=num_instances))
 
-            cluster_instances = list(
-                ec2.instances.filter(
-                    Filters=[
-                        {'Name': 'instance-id', 'Values': [r['InstanceId'] for r in spot_requests]}
-                    ]))
         else:
             # Move this to flintrock.py?
             print("Launching {c} instance{s}...".format(
