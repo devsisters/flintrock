@@ -241,6 +241,7 @@ class EC2Cluster(FlintrockCluster):
             user: str,
             identity_file: str,
             instance_type: str,
+            block_duration_minutes: int,
             num_slaves: int,
             spot_price: float,
             min_root_ebs_size_gb: int,
@@ -288,6 +289,7 @@ class EC2Cluster(FlintrockCluster):
                 assume_yes=assume_yes,
                 key_name=self.master_instance.key_name,
                 instance_type=instance_type,
+                block_duration_minutes=block_duration_minutes,
                 block_device_mappings=block_device_mappings,
                 availability_zone=availability_zone,
                 placement_group=self.master_instance.placement['GroupName'],
@@ -686,6 +688,7 @@ def _create_instances(
         assume_yes,
         key_name,
         instance_type,
+        block_duration_minutes,
         block_device_mappings,
         availability_zone,
         placement_group,
@@ -707,7 +710,7 @@ def _create_instances(
             logger.info("Requesting {c} spot instances at a max price of ${p}...".format(
                 c=num_instances, p=spot_price))
             client = ec2.meta.client
-            spot_requests = client.request_spot_instances(
+            request_params = dict(
                 SpotPrice=str(spot_price),
                 InstanceCount=num_instances,
                 LaunchSpecification={
@@ -723,7 +726,12 @@ def _create_instances(
                     'IamInstanceProfile': {
                         'Arn': instance_profile_arn},
                     'EbsOptimized': ebs_optimized,
-                    'UserData': user_data})['SpotInstanceRequests']
+                    'UserData': user_data}
+            )
+            if block_duration_minutes:
+                request_params["BlockDurationMinutes"] = block_duration_minutes
+
+            spot_requests = client.request_spot_instances(**request_params)['SpotInstanceRequests']
 
             request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
             pending_request_ids = request_ids
@@ -818,6 +826,7 @@ def launch(
         key_name,
         identity_file,
         instance_type,
+        block_duration_minutes,
         region,
         availability_zone,
         ami,
@@ -901,6 +910,7 @@ def launch(
             assume_yes=assume_yes,
             key_name=key_name,
             instance_type=instance_type,
+            block_duration_minutes=block_duration_minutes,
             block_device_mappings=block_device_mappings,
             availability_zone=availability_zone,
             placement_group=placement_group,

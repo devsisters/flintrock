@@ -288,6 +288,7 @@ def cli(cli_context, config, provider, debug):
               type=click.Path(exists=True, dir_okay=False),
               help="Path to SSH .pem file for accessing nodes.")
 @click.option('--ec2-instance-type', default='m3.medium', show_default=True)
+@click.option('--ec2-block-duration-minutes', type=int, default=0)
 @click.option('--ec2-region', default='us-east-1', show_default=True)
 # We set some of these defaults to empty strings because of boto3's parameter validation.
 # See: https://github.com/boto/boto3/issues/400
@@ -334,6 +335,7 @@ def launch(
         ec2_key_name,
         ec2_identity_file,
         ec2_instance_type,
+        ec2_block_duration_minutes,
         ec2_region,
         ec2_availability_zone,
         ec2_ami,
@@ -438,6 +440,7 @@ def launch(
             key_name=ec2_key_name,
             identity_file=ec2_identity_file,
             instance_type=ec2_instance_type,
+            block_duration_minutes=ec2_block_duration_minutes,
             region=ec2_region,
             availability_zone=ec2_availability_zone,
             ami=ec2_ami,
@@ -717,6 +720,7 @@ def stop(cli_context, cluster_name, ec2_region, ec2_vpc_id, assume_yes):
               type=click.Path(exists=True, dir_okay=False),
               help="Path to SSH .pem file for accessing nodes.")
 @click.option('--ec2-instance-type', default='m3.medium', show_default=True)
+@click.option('--ec2-block-duration-minutes', type=int, default=0)
 @click.option('--ec2-user')
 @click.option('--ec2-spot-price', type=float)
 @click.option('--ec2-min-root-ebs-size-gb', type=int, default=30)
@@ -735,6 +739,7 @@ def add_slaves(
         ec2_vpc_id,
         ec2_identity_file,
         ec2_instance_type,
+        ec2_block_duration_minutes,
         ec2_user,
         ec2_spot_price,
         ec2_min_root_ebs_size_gb,
@@ -789,6 +794,7 @@ def add_slaves(
             user=user,
             identity_file=identity_file,
             instance_type=ec2_instance_type,
+            block_duration_minutes=ec2_block_duration_minutes,
             num_slaves=num_slaves,
             assume_yes=assume_yes,
             **provider_options)
