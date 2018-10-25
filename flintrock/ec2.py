@@ -241,6 +241,8 @@ class EC2Cluster(FlintrockCluster):
             user: str,
             identity_file: str,
             instance_type: str,
+            block_duration_minutes: int,
+            guarantee_num_instance: bool,
             num_slaves: int,
             spot_price: float,
             min_root_ebs_size_gb: int,
@@ -288,6 +290,8 @@ class EC2Cluster(FlintrockCluster):
                 assume_yes=assume_yes,
                 key_name=self.master_instance.key_name,
                 instance_type=instance_type,
+                block_duration_minutes=block_duration_minutes,
+                guarantee_num_instance=guarantee_num_instance,
                 block_device_mappings=block_device_mappings,
                 availability_zone=availability_zone,
                 placement_group=self.master_instance.placement['GroupName'],
@@ -686,6 +690,8 @@ def _create_instances(
         assume_yes,
         key_name,
         instance_type,
+        block_duration_minutes,
+        guarantee_num_instance,
         block_device_mappings,
         availability_zone,
         placement_group,
@@ -707,7 +713,7 @@ def _create_instances(
             logger.info("Requesting {c} spot instances at a max price of ${p}...".format(
                 c=num_instances, p=spot_price))
             client = ec2.meta.client
-            spot_requests = client.request_spot_instances(
+            request_params = dict(
                 SpotPrice=str(spot_price),
                 InstanceCount=num_instances,
                 LaunchSpecification={
@@ -723,15 +729,22 @@ def _create_instances(
                     'IamInstanceProfile': {
                         'Arn': instance_profile_arn},
                     'EbsOptimized': ebs_optimized,
-                    'UserData': user_data})['SpotInstanceRequests']
+                    'UserData': user_data}
+            )
+            if block_duration_minutes:
+                request_params["BlockDurationMinutes"] = block_duration_minutes
+
+            spot_requests = client.request_spot_instances(**request_params)['SpotInstanceRequests']
 
             request_ids = [r['SpotInstanceRequestId'] for r in spot_requests]
             pending_request_ids = request_ids
 
-            while pending_request_ids:
+            # Cancel Open spot request, and displace remaining request with on demand request.
+            if guarantee_num_instance and block_duration_minutes:
                 logger.info("{grant} of {req} instances granted. Waiting...".format(
                     grant=num_instances - len(pending_request_ids),
                     req=num_instances))
+                # waiting for spot reqeusts are fully processed
                 time.sleep(30)
                 spot_requests = client.describe_spot_instance_requests(
                     SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
@@ -744,18 +757,75 @@ def _create_instances(
                         .format(
                             s='' if len(failure_reasons) == 1 else 's',
                             reasons=', '.join(failure_reasons)))
-
                 pending_request_ids = [
                     r['SpotInstanceRequestId'] for r in spot_requests
                     if r['State'] == 'open']
 
+                logger.info("{grant} of {req} instances granted. Waiting...".format(
+                    grant=num_instances - len(pending_request_ids),
+                    req=num_instances))
+
+                remaining_num_instances = len(pending_request_ids)
+                block_cluster_instances = list(
+                    ec2.instances.filter(
+                        Filters=[
+                            {'Name': 'instance-id', 'Values': [r.get('InstanceId', '') for r in spot_requests]}
+                        ]))
+                demand_cluster_instances = list()
+
+                if remaining_num_instances > 0:
+                    client.cancel_spot_instance_requests(
+                        SpotInstanceRequestIds=pending_request_ids)
+                    logger.info("cancel success, launch {} on-demand instances".format(len(pending_request_ids)))
+                    demand_cluster_instances = ec2.create_instances(
+                        MinCount=remaining_num_instances,
+                        MaxCount=remaining_num_instances,
+                        ImageId=ami,
+                        KeyName=key_name,
+                        InstanceType=instance_type,
+                        BlockDeviceMappings=block_device_mappings,
+                        Placement={
+                            'AvailabilityZone': availability_zone,
+                            'Tenancy': tenancy,
+                            'GroupName': placement_group},
+                        SecurityGroupIds=security_group_ids,
+                        SubnetId=subnet_id,
+                        IamInstanceProfile={
+                            'Arn': instance_profile_arn},
+                        EbsOptimized=ebs_optimized,
+                        InstanceInitiatedShutdownBehavior=instance_initiated_shutdown_behavior,
+                        UserData=user_data)
+                cluster_instances = block_cluster_instances + demand_cluster_instances
+            else:
+                while pending_request_ids:
+                    logger.info("{grant} of {req} instances granted. Waiting...".format(
+                        grant=num_instances - len(pending_request_ids),
+                        req=num_instances))
+
+                    time.sleep(30)
+                    spot_requests = client.describe_spot_instance_requests(
+                        SpotInstanceRequestIds=request_ids)['SpotInstanceRequests']
+
+                    failed_requests = [r for r in spot_requests if r['State'] == 'failed']
+                    if failed_requests:
+                        failure_reasons = {r['Status']['Code'] for r in failed_requests}
+                        raise Error(
+                            "The spot request failed for the following reason{s}: {reasons}"
+                            .format(
+                                s='' if len(failure_reasons) == 1 else 's',
+                                reasons=', '.join(failure_reasons)))
+
+                    pending_request_ids = [
+                        r['SpotInstanceRequestId'] for r in spot_requests
+                        if r['State'] == 'open']
+
+                cluster_instances = list(
+                    ec2.instances.filter(
+                        Filters=[
+                            {'Name': 'instance-id', 'Values': [r['InstanceId'] for r in spot_requests]}
+                        ]))
             logger.info("All {c} instances granted.".format(c=num_instances))
 
-            cluster_instances = list(
-                ec2.instances.filter(
-                    Filters=[
-                        {'Name': 'instance-id', 'Values': [r['InstanceId'] for r in spot_requests]}
-                    ]))
         else:
             # Move this to flintrock.py?
             logger.info("Launching {c} instance{s}...".format(
@@ -818,6 +888,8 @@ def launch(
         key_name,
         identity_file,
         instance_type,
+        block_duration_minutes,
+        guarantee_num_instance,
         region,
         availability_zone,
         ami,
@@ -901,7 +973,9 @@ def launch(
             assume_yes=assume_yes,
             key_name=key_name,
             instance_type=instance_type,
+            block_duration_minutes=block_duration_minutes,
             block_device_mappings=block_device_mappings,
+            guarantee_num_instance=guarantee_num_instance,
             availability_zone=availability_zone,
             placement_group=placement_group,
             tenancy=tenancy,
